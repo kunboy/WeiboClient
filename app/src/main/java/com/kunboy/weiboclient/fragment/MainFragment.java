@@ -18,17 +18,15 @@ import android.widget.Toast;
 
 import com.kunboy.weiboclient.R;
 import com.kunboy.weiboclient.account.AccessTokenKeeper;
-import com.kunboy.weiboclient.adapter.MyAdapter;
-import com.kunboy.weiboclient.constants.WeiboConstants;
+import com.kunboy.weiboclient.adapter.HomelineAdapter;
+import com.kunboy.weiboclient.animator.SlideInDownAnimator;
 import com.kunboy.weiboclient.debug.DebugLog;
 import com.kunboy.weiboclient.http.AbstractOkHttpCallBack;
 import com.kunboy.weiboclient.http.HomeTimeLineImpl;
 import com.kunboy.weiboclient.ui.CustomSwipeRefreshLayout;
 import com.kunboy.weiboclient.ui.FloatingActionButton;
 import com.sina.weibo.sdk.auth.Oauth2AccessToken;
-import com.sina.weibo.sdk.exception.WeiboException;
-import com.sina.weibo.sdk.net.RequestListener;
-import com.sina.weibo.sdk.openapi.StatusesAPI;
+import com.sina.weibo.sdk.openapi.models.Status;
 import com.sina.weibo.sdk.openapi.models.StatusList;
 import com.squareup.okhttp.Headers;
 import com.squareup.okhttp.OkHttpClient;
@@ -36,6 +34,7 @@ import com.squareup.okhttp.Request;
 import com.squareup.okhttp.Response;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 /**
  * Created by sunhongkun on 2015/2/8.
@@ -51,9 +50,9 @@ public class MainFragment extends Fragment {
     //RecyclerView的layoutManager
     private RecyclerView.LayoutManager mLayoutManager;
     //展示数据Recycler的Adapter
-    private MyAdapter mAdapter;
+    private HomelineAdapter mAdapter;
     //虚拟数据源
-    private String[] myDataset;
+    private ArrayList<Status> mDataset = new ArrayList<Status>();
     private int addedIndex = 0;
     //可隐藏title的标题显示
     private TextView mTitleBar;
@@ -68,8 +67,19 @@ public class MainFragment extends Fragment {
     //整体可伸缩title根布局
     private RelativeLayout mTitleBarLayout;
 
+    /**
+     * 每页请求的数量
+     */
+    public static final int PAGECOUNT = 50;
+    /**
+     * 当前请求道第几页
+     */
+    private int currentPage = 1;
+
     /** 当前的 Token */
     protected Oauth2AccessToken mAccessToken;
+
+    private boolean isLoadingMore = false;
     public MainFragment() {
 
     }
@@ -104,29 +114,27 @@ public class MainFragment extends Fragment {
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         setListeners();
+        mSwipeRefreshLayout.setRefreshing(true);
         getHomeTimeLine();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
     }
 
     private void getHomeTimeLine() {
 
-
-//        StatusesAPI statusesAPI = new StatusesAPI(getActivity(), WeiboConstants.APP_KEY,mAccessToken);
-//        statusesAPI.friendsTimeline(0,0,20,1,false,0,true,new RequestListener() {
+        final Request request = new HomeTimeLineImpl(mAccessToken,"0","0",PAGECOUNT,currentPage++,0,0,0).buildRequest();
+//        new Thread(){
 //            @Override
-//            public void onComplete(String s) {
-//                DebugLog.d(TAG,"friendsTimeline onComplete",s);
+//            public void run() {
+//                super.run();
+//                mOkHttpClient.cancel(request.tag());
 //            }
-//
-//            @Override
-//            public void onWeiboException(WeiboException e) {
-//
-//            }
-//        });
-
-        Request request = new HomeTimeLineImpl(mAccessToken,"0","0",20,1,0,0,0).buildRequest();
-        mOkHttpClient.cancel(request.tag());
+//        }.start();
+//        mOkHttpClient.cancel(request.tag());
         mOkHttpClient.newCall(request).enqueue(new GetHomeTimelineCallback());
-
 
     }
 
@@ -152,6 +160,19 @@ public class MainFragment extends Fragment {
                                              int newState) {
                 // TODO Auto-generated method stub
                 super.onScrollStateChanged(recyclerView, newState);
+                if (newState == RecyclerView.SCROLL_STATE_IDLE){
+                    if(recyclerView.getLayoutManager() instanceof LinearLayoutManager){
+                        int x = ((LinearLayoutManager)recyclerView.getLayoutManager()).findLastVisibleItemPosition();
+                        int y = recyclerView.getAdapter().getItemCount();
+                        if( x >= y-1){
+                            Toast.makeText(getActivity(),"加载更多",Toast.LENGTH_SHORT).show();
+                            if (!isLoadingMore){
+                                isLoadingMore = true;
+                                showMoreStatus();
+                            }
+                        }
+                    }
+                }
             }
 
             @Override
@@ -182,7 +203,7 @@ public class MainFragment extends Fragment {
         });
 
         //设置onItemClickListener，这里需要注意下一，由于调用了部分更新的方法，所以position位置可能是错误的，所以没有将position作为参数传上来
-        mAdapter.setOnItemClickListener(new MyAdapter.OnItemClickListener() {
+        mAdapter.setOnItemClickListener(new HomelineAdapter.OnItemClickListener() {
 
             @Override
             public void onItemClick(View view) {
@@ -191,19 +212,23 @@ public class MainFragment extends Fragment {
         });
     }
 
+    private void showMoreStatus() {
+        getHomeTimeLine();
+    }
+
     private void initViews(View rootView) {
         mSwipeRefreshLayout = (CustomSwipeRefreshLayout) rootView.findViewById(R.id.swiperefresh);
         mTitleBar = (TextView) rootView.findViewById(R.id.title);
         mBlank = rootView.findViewById(R.id.blank);
         editButton = (FloatingActionButton) rootView.findViewById(R.id.edit_button);
         mTitleBarLayout = (RelativeLayout) rootView.findViewById(R.id.title_bar);
-        mRecyclerView = (RecyclerView) rootView.findViewById(R.id.my_recycler_view);
+        mRecyclerView = (RecyclerView) rootView.findViewById(R.id.status_recycler_view);
         mRecyclerView.setHasFixedSize(true);
         mLayoutManager = new LinearLayoutManager(getActivity());
         mRecyclerView.setLayoutManager(mLayoutManager);
         //设置RecyclerView的默认动画，这里可以换成其他的动画效果
-        mRecyclerView.setItemAnimator(new DefaultItemAnimator());
-        mAdapter = new MyAdapter(myDataset);
+        mRecyclerView.setItemAnimator(new SlideInDownAnimator());
+        mAdapter = new HomelineAdapter(getActivity(),mDataset);
         mRecyclerView.setAdapter(mAdapter);
     }
 
@@ -364,16 +389,6 @@ public class MainFragment extends Fragment {
 
     }
 
-    protected void addOne() {
-        // TODO Auto-generated method stub
-        for (int x = 0; x < 2; x++) {
-            mAdapter.getData().add(0, "" + (addedIndex++));
-            mAdapter.notifyItemInserted(0);
-        }
-        mRecyclerView.scrollToPosition(0);
-        mSwipeRefreshLayout.setRefreshing(false);
-
-    }
 
     class GetHomeTimelineCallback extends AbstractOkHttpCallBack {
 
@@ -402,19 +417,28 @@ public class MainFragment extends Fragment {
         public void doFailure(Request request, IOException ioexception) {
             onGetHomeTimelineFailure();
             mSwipeRefreshLayout.setRefreshing(false);
+            isLoadingMore = false;
         }
 
         @Override
         public void doResponse(Object object) {
-
-            onGetHomeTimelineSuccess();
+            int count = mDataset.size();
+            int addCount = ((StatusList)object).statusList.size();
+            if(addCount > 0){
+                mDataset.addAll(((StatusList)object).statusList);
+                mAdapter.setData(mDataset);
+                mAdapter.notifyItemRangeInserted(count,addCount);
+                onGetHomeTimelineSuccess();
+            }
             mSwipeRefreshLayout.setRefreshing(false);
+            isLoadingMore = false;
         }
     }
 
 
     private void onGetHomeTimelineSuccess() {
-
+//        mAdapter.setData(mDataset);
+//        mAdapter.notifyDataSetChanged();
     }
 
     private void onGetHomeTimelineFailure() {

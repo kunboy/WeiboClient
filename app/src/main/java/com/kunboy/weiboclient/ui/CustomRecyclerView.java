@@ -21,4 +21,9 @@ public class CustomRecyclerView extends RecyclerView {
 	public boolean canScrollVertically(int direction) {
 		return super.canScrollVertically(direction);
 	}
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent e) {
+        return super.onInterceptTouchEvent(e);
+    }
 }
